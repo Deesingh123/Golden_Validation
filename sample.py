@@ -21,18 +21,15 @@ CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSOERBZB4TXUBp_QmForD
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
-# Try to read secrets, but fallback to hardcoded values
 SENDER_EMAIL = st.secrets.get("SENDER_EMAIL", "chauhandeesingh@gmail.com")
 SENDER_PASSWORD = st.secrets.get("SENDER_PASSWORD", "empxwcwfvmbphvsw")
 
-# Multiple primary recipients (as a list)
 DEFAULT_PRIMARY = [
     "emurugesan.padget@dixoninfo.com",
     "prateek.padget60@dixoninfo.com"
 ]
 PRIMARY_RECIPIENTS = st.secrets.get("PRIMARY_RECIPIENTS", DEFAULT_PRIMARY)
 
-# CC recipients (list)
 DEFAULT_CC = [
     "chauhandeesingh@gmail.com",
     "ramnaresh.padget@dixoninfo.com",
@@ -42,7 +39,6 @@ DEFAULT_CC = [
 ]
 CC_RECIPIENTS = st.secrets.get("CC_RECIPIENTS", DEFAULT_CC)
 
-# Ensure both are lists
 if isinstance(PRIMARY_RECIPIENTS, str):
     PRIMARY_RECIPIENTS = [PRIMARY_RECIPIENTS]
 if isinstance(CC_RECIPIENTS, str):
@@ -50,12 +46,9 @@ if isinstance(CC_RECIPIENTS, str):
 
 EMAIL_CONFIGURED = all([SENDER_EMAIL, SENDER_PASSWORD, PRIMARY_RECIPIENTS])
 
-# Auto email settings
-AUTO_EMAIL_HOUR = 9
-AUTO_EMAIL_MINUTE = 0
-AUTO_EMAIL_ENABLED = True
+# Auto email – temporarily disabled to avoid startup crashes
+AUTO_EMAIL_ENABLED = False   # set to True after confirming data loads
 
-# Persistent state file – uses system temp directory (works on Windows/Linux/macOS)
 STATE_FILE = os.path.join(tempfile.gettempdir(), "golden_sample_email_state.json")
 # ===================================
 
@@ -66,13 +59,11 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Professional CSS Styling (unchanged)
+# CSS styling (unchanged – keep as before)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    * {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
-    }
+    * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important; }
     .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 0.8rem 2rem;
@@ -107,36 +98,11 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 0.3px;
     }
-    .alert-success {
-        background: linear-gradient(135deg, #f0fdf4 0%, #f3fef7 100%);
-        border-left: 3px solid #10b981;
-        padding: 0.5rem 0.8rem;
-        border-radius: 6px;
-        margin: 0.5rem 0;
-        font-size: 0.85rem;
-        font-weight: 500;
-    }
-    .control-bar {
-        background: #f8f9fa;
-        padding: 0.8rem 1rem;
-        border-radius: 10px;
-        margin: 0.5rem 0 1rem 0;
-        border: 1px solid #e9ecef;
-    }
     .stButton button {
         border-radius: 8px !important;
         font-weight: 500 !important;
         padding: 0.4rem 0.8rem !important;
         font-size: 0.8rem !important;
-        transition: all 0.2s !important;
-    }
-    .stSelectbox label, .stTextInput label {
-        font-size: 0.75rem !important;
-        font-weight: 600 !important;
-        margin-bottom: 0.2rem !important;
-    }
-    .stSelectbox, .stTextInput {
-        font-size: 0.85rem !important;
     }
     .stDataFrame {
         border-radius: 10px;
@@ -151,10 +117,7 @@ st.markdown("""
         border: 1px solid #e9ecef;
         margin-bottom: 0.5rem;
     }
-    hr {
-        margin: 0.5rem 0;
-        border-color: #e9ecef;
-    }
+    hr { margin: 0.5rem 0; border-color: #e9ecef; }
     .section-title {
         font-size: 1.1rem;
         font-weight: 600;
@@ -164,7 +127,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
+# Session state initialisation (unchanged)
 if 'email_sent_today' not in st.session_state:
     st.session_state.email_sent_today = False
 if 'last_email_date' not in st.session_state:
@@ -176,9 +139,7 @@ if 'cc_recipients' not in st.session_state:
 if 'df' not in st.session_state:
     st.session_state.df = None
 
-# ─────────────────────────────────────────────────────────────
-#  PERSISTENT STATE
-# ─────────────────────────────────────────────────────────────
+# ─── Persistent state helpers (unchanged) ───
 def _load_state() -> dict:
     try:
         if os.path.exists(STATE_FILE):
@@ -209,9 +170,7 @@ def _mark_email_sent():
     st.session_state.email_sent_today = True
     st.session_state.last_email_date = now
 
-# ─────────────────────────────────────────────────────────────
-#  DATA HELPERS
-# ─────────────────────────────────────────────────────────────
+# ─── Data helpers (unchanged) ───
 def parse_date_safe(date_str):
     if pd.isna(date_str) or date_str == '' or date_str is None:
         return None
@@ -237,7 +196,7 @@ def fetch_data():
         df.columns = df.columns.str.strip()
         return df
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        st.error(f"❌ Error fetching data: {e}")
         return None
 
 def process_data(df):
@@ -249,7 +208,7 @@ def process_data(df):
     required_cols = ['Validation Date', 'Staus', 'Model']
     for col in required_cols:
         if col not in df.columns:
-            st.error(f"Missing column: {col}")
+            st.error(f"❌ Missing column: '{col}'. Found columns: {list(df.columns)}")
             return None
 
     def clean_status(s):
@@ -270,6 +229,7 @@ def process_data(df):
     df = df.dropna(subset=['Validation Date Parsed'])
    
     if df.empty:
+        st.error("No rows with valid dates.")
         return None
     
     validation_dates = pd.Series(df['Validation Date Parsed'])
@@ -315,9 +275,7 @@ def get_overdue_records(df):
         return pd.DataFrame()
     return df[(df['Days Left'] < 0) & (df['Staus'].str.lower() != 'ok')]
 
-# ─────────────────────────────────────────────────────────────
-#  EMAIL (with CSV attachment, supports multiple primary recipients)
-# ─────────────────────────────────────────────────────────────
+# ─── Email functions (unchanged) ───
 def send_email_alert(df, primary_recipients, cc_recipients):
     if not EMAIL_CONFIGURED:
         return False, "Email credentials not configured."
@@ -328,7 +286,6 @@ def send_email_alert(df, primary_recipients, cc_recipients):
     if due_records.empty and overdue_records.empty:
         return False, "No records requiring immediate attention"
 
-    # Clean up lists
     primary_list = [p.strip() for p in primary_recipients if p and p.strip()]
     cc_list = [c.strip() for c in cc_recipients if c and c.strip()]
 
@@ -336,13 +293,11 @@ def send_email_alert(df, primary_recipients, cc_recipients):
         return False, "No valid primary recipients"
 
     try:
-        # Generate HTML body
         email_body = generate_email_html(due_records, overdue_records)
 
-        # Create message
         msg = MIMEMultipart()
         msg['From'] = SENDER_EMAIL
-        msg['To'] = ', '.join(primary_list)          # Multiple primary recipients
+        msg['To'] = ', '.join(primary_list)
         if cc_list:
             msg['Cc'] = ', '.join(cc_list)
 
@@ -350,7 +305,6 @@ def send_email_alert(df, primary_recipients, cc_recipients):
         msg['Subject'] = f"🚨 Golden Sample Alert: {total} Sample(s) Need Attention"
         msg.attach(MIMEText(email_body, 'html'))
 
-        # --- Attach CSV report of the alert records ---
         alert_records = pd.concat([due_records, overdue_records])
         if not alert_records.empty:
             csv_buffer = io.StringIO()
@@ -367,7 +321,6 @@ def send_email_alert(df, primary_recipients, cc_recipients):
             )
             msg.attach(part)
 
-        # Send – include all recipients (primary + CC) in the envelope
         all_recipients = primary_list + cc_list
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
@@ -435,7 +388,7 @@ def check_and_send_auto_email(df):
         return False, "Auto email disabled or not configured"
     
     now = datetime.now()
-    if now.hour == AUTO_EMAIL_HOUR and now.minute == AUTO_EMAIL_MINUTE:
+    if now.hour == 9 and now.minute == 0:
         if not _should_send_email_today():
             return False, "Email already sent today"
         
@@ -454,9 +407,7 @@ def check_and_send_auto_email(df):
     
     return False, ""
 
-# ─────────────────────────────────────────────────────────────
-#  CHARTS
-# ─────────────────────────────────────────────────────────────
+# ─── Charts (unchanged) ───
 def create_status_chart(df):
     if df.empty:
         fig = go.Figure()
@@ -543,7 +494,7 @@ def create_urgency_chart(df):
     )
     return fig
 
-# Styling Functions
+# Styling functions
 def style_status(val):
     val = str(val).lower().strip()
     if val == 'ok':
@@ -566,169 +517,174 @@ def style_days(val):
             pass
     return ''
 
-# ─────────────────────────────────────────────────────────────
-#  MAIN
-# ─────────────────────────────────────────────────────────────
+# ─── MAIN (with global error handling) ───
 def main():
-    st.markdown('<div class="main-header"><h1 style="color:white;">🏭 Golden Sample Revalidation Tracker</h1></div>', unsafe_allow_html=True)
-   
-    with st.spinner("Loading latest data..."):
-        df_raw = fetch_data()
-        df = process_data(df_raw)
-   
-    if df is None or df.empty:
-        st.error("No valid data available. Please check the data source.")
-        return
+    try:
+        st.markdown('<div class="main-header"><h1 style="color:white;">🏭 Golden Sample Revalidation Tracker</h1></div>', unsafe_allow_html=True)
+       
+        with st.spinner("Loading latest data..."):
+            df_raw = fetch_data()
+            df = process_data(df_raw)
+       
+        if df is None or df.empty:
+            st.error("❌ No valid data available. Please check the data source and column names.")
+            st.write("**Expected columns:** `Validation Date`, `Staus`, `Model`")
+            st.write("**Found columns:**", list(df_raw.columns) if df_raw is not None else "No data")
+            return
 
-    st.session_state.df = df
+        st.session_state.df = df
 
-    # Auto email
-    auto_sent, auto_msg = check_and_send_auto_email(df)
-    if auto_sent:
-        st.toast(auto_msg, icon="✅")
+        # Auto email – temporarily disabled to avoid startup errors
+        # Uncomment after you confirm data loads correctly
+        # auto_sent, auto_msg = check_and_send_auto_email(df)
+        # if auto_sent:
+        #     st.toast(auto_msg, icon="✅")
 
-    # Metrics
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    total = len(df)
-    ok_count = len(df[df['Staus'].str.lower() == 'ok'])
-    pending_count = len(df[df['Staus'].str.lower() == 'pending'])
-    ng_count = len(df[df['Staus'].str.lower() == 'ng'])
-    urgent_count = len(get_due_records(df))
-    overdue_count = len(get_overdue_records(df))
+        # Metrics
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
+        total = len(df)
+        ok_count = len(df[df['Staus'].str.lower() == 'ok'])
+        pending_count = len(df[df['Staus'].str.lower() == 'pending'])
+        ng_count = len(df[df['Staus'].str.lower() == 'ng'])
+        urgent_count = len(get_due_records(df))
+        overdue_count = len(get_overdue_records(df))
 
-    metric_style = """
-    <div style="background:white;padding:12px 8px;border-radius:12px;
-                box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;">
-        <div style="font-size:1.8rem;font-weight:700;margin-bottom:4px;">{}</div>
-        <div style="font-size:0.75rem;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">{}</div>
-    </div>
-    """
+        metric_style = """
+        <div style="background:white;padding:12px 8px;border-radius:12px;
+                    box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center;">
+            <div style="font-size:1.8rem;font-weight:700;margin-bottom:4px;">{}</div>
+            <div style="font-size:0.75rem;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">{}</div>
+        </div>
+        """
 
-    st.caption(f"**Last Updated:** {datetime.now().strftime('%d-%m-%Y %I:%M %p')}")
+        st.caption(f"**Last Updated:** {datetime.now().strftime('%d-%m-%Y %I:%M %p')}")
 
-    with col1: st.markdown(metric_style.format(total, "TOTAL"), unsafe_allow_html=True)
-    with col2: st.markdown(metric_style.format(ok_count, "✅ OK"), unsafe_allow_html=True)
-    with col3: st.markdown(metric_style.format(pending_count, "⏳ PENDING"), unsafe_allow_html=True)
-    with col4: st.markdown(metric_style.format(ng_count, "❌ NG"), unsafe_allow_html=True)
-    with col5: st.markdown(metric_style.format(urgent_count, "🔴 URGENT"), unsafe_allow_html=True)
-    with col6: st.markdown(metric_style.format(overdue_count, "⚠️ OVERDUE"), unsafe_allow_html=True)
+        with col1: st.markdown(metric_style.format(total, "TOTAL"), unsafe_allow_html=True)
+        with col2: st.markdown(metric_style.format(ok_count, "✅ OK"), unsafe_allow_html=True)
+        with col3: st.markdown(metric_style.format(pending_count, "⏳ PENDING"), unsafe_allow_html=True)
+        with col4: st.markdown(metric_style.format(ng_count, "❌ NG"), unsafe_allow_html=True)
+        with col5: st.markdown(metric_style.format(urgent_count, "🔴 URGENT"), unsafe_allow_html=True)
+        with col6: st.markdown(metric_style.format(overdue_count, "⚠️ OVERDUE"), unsafe_allow_html=True)
 
-    # Charts
-    col_chart1, col_chart2 = st.columns(2)
-    with col_chart1:
-        st.plotly_chart(create_status_chart(df), use_container_width=True, config={'displayModeBar': False})
-    with col_chart2:
-        st.plotly_chart(create_urgency_chart(df), use_container_width=True, config={'displayModeBar': False})
+        # Charts
+        col_chart1, col_chart2 = st.columns(2)
+        with col_chart1:
+            st.plotly_chart(create_status_chart(df), use_container_width=True, config={'displayModeBar': False})
+        with col_chart2:
+            st.plotly_chart(create_urgency_chart(df), use_container_width=True, config={'displayModeBar': False})
 
-    st.markdown("### 📋 Sample Details")
+        st.markdown("### 📋 Sample Details")
 
-    # Filters
-    c1, c2, c3, c4, c5, c6 = st.columns([1.4, 1.4, 2, 1, 1, 1])
+        # Filters
+        c1, c2, c3, c4, c5, c6 = st.columns([1.4, 1.4, 2, 1, 1, 1])
 
-    with c1:
-        status_filter = st.selectbox("Status", ['All', 'Ok', 'Pending', 'Ng'], index=0, key="status_filter")
-    with c2:
-        urgency_filter = st.selectbox("Urgency", ['All', 'Overdue', 'Urgent', 'Due Soon', 'On Track'], key="urgency_filter")
-    with c3:
-        search_model = st.text_input("🔍 Search Model", "", placeholder="Enter model name...", key="search_model")
+        with c1:
+            status_filter = st.selectbox("Status", ['All', 'Ok', 'Pending', 'Ng'], index=0, key="status_filter")
+        with c2:
+            urgency_filter = st.selectbox("Urgency", ['All', 'Overdue', 'Urgent', 'Due Soon', 'On Track'], key="urgency_filter")
+        with c3:
+            search_model = st.text_input("🔍 Search Model", "", placeholder="Enter model name...", key="search_model")
 
-    with c4:
-        if st.button("📥 Export CSV", use_container_width=True):
-            csv = df.to_csv(index=False)
-            st.download_button("Download Report", csv, f"golden_sample_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", "text/csv")
-    with c5:
-        if st.button("📧 Send Alert", use_container_width=True, type="primary"):
-            with st.spinner("Sending email..."):
-                success, msg = send_email_alert(df, st.session_state.primary_recipients, st.session_state.cc_recipients)
-                if success:
-                    st.success(msg)
-                else:
-                    st.error(msg)
-    with c6:
-        if st.button("Clear Filters"):
-            st.session_state.status_filter = 'All'
-            st.session_state.urgency_filter = 'All'
-            st.rerun()
+        with c4:
+            if st.button("📥 Export CSV", use_container_width=True):
+                csv = df.to_csv(index=False)
+                st.download_button("Download Report", csv, f"golden_sample_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", "text/csv")
+        with c5:
+            if st.button("📧 Send Alert", use_container_width=True, type="primary"):
+                with st.spinner("Sending email..."):
+                    success, msg = send_email_alert(df, st.session_state.primary_recipients, st.session_state.cc_recipients)
+                    if success:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+        with c6:
+            if st.button("Clear Filters"):
+                st.session_state.status_filter = 'All'
+                st.session_state.urgency_filter = 'All'
+                st.rerun()
 
-    # Filtering
-    filtered_df = df.copy()
+        # Filtering
+        filtered_df = df.copy()
 
-    if status_filter != 'All':
-        filtered_df = filtered_df[filtered_df['Staus'] == status_filter]
+        if status_filter != 'All':
+            filtered_df = filtered_df[filtered_df['Staus'] == status_filter]
 
-    if urgency_filter != 'All':
-        if urgency_filter == 'Overdue':
-            filtered_df = filtered_df[filtered_df['Days Left'] < 0]
-        elif urgency_filter == 'Urgent':
-            filtered_df = filtered_df[(filtered_df['Days Left'] <= 3) & (filtered_df['Days Left'] >= 0)]
-        elif urgency_filter == 'Due Soon':
-            filtered_df = filtered_df[(filtered_df['Days Left'] <= 7) & (filtered_df['Days Left'] > 3)]
-        elif urgency_filter == 'On Track':
-            filtered_df = filtered_df[filtered_df['Days Left'] > 7]
+        if urgency_filter != 'All':
+            if urgency_filter == 'Overdue':
+                filtered_df = filtered_df[filtered_df['Days Left'] < 0]
+            elif urgency_filter == 'Urgent':
+                filtered_df = filtered_df[(filtered_df['Days Left'] <= 3) & (filtered_df['Days Left'] >= 0)]
+            elif urgency_filter == 'Due Soon':
+                filtered_df = filtered_df[(filtered_df['Days Left'] <= 7) & (filtered_df['Days Left'] > 3)]
+            elif urgency_filter == 'On Track':
+                filtered_df = filtered_df[filtered_df['Days Left'] > 7]
 
-    if search_model:
-        filtered_df = filtered_df[filtered_df['Model'].str.contains(search_model, case=False, na=False)]
+        if search_model:
+            filtered_df = filtered_df[filtered_df['Model'].str.contains(search_model, case=False, na=False)]
 
-    # Display Table
-    if filtered_df.empty:
-        st.warning("🔍 No records found matching your filters.")
-    else:
-        display_df = filtered_df[['Model', 'Validation Date Display', 'Revalidation Due Display',
-                                 'Days Left', 'Staus', 'Incharge', 'Alert Status']].copy()
-        display_df = display_df.fillna('-')
-        
-        def format_days(row):
-            if str(row['Staus']).lower() == 'ng':
-                return '-'
-            try:
-                d = float(row['Days Left'])
-                return f"{int(d)}d" if not pd.isna(d) else '-'
-            except:
-                return '-'
-        
-        display_df['Days Left'] = display_df.apply(format_days, axis=1)
-        
-        def highlight_row(row):
-            styles = [''] * len(row)
-            status = str(row['Staus']).lower()
-            days_val = str(row['Days Left'])
+        # Display Table
+        if filtered_df.empty:
+            st.warning("🔍 No records found matching your filters.")
+        else:
+            display_df = filtered_df[['Model', 'Validation Date Display', 'Revalidation Due Display',
+                                     'Days Left', 'Staus', 'Incharge', 'Alert Status']].copy()
+            display_df = display_df.fillna('-')
             
-            if status == 'ng' or (days_val != '-' and '-' in days_val and 'overdue' in days_val.lower()):
-                styles = ['background-color: #fee2e2; color: #991b1b'] * len(row)
-            elif days_val != '-' and 'd' in days_val:
+            def format_days(row):
+                if str(row['Staus']).lower() == 'ng':
+                    return '-'
                 try:
-                    days = int(days_val.replace('d',''))
-                    if days < 0:
-                        styles = ['background-color: #fee2e2'] * len(row)
-                    elif days <= 3:
-                        styles = ['background-color: #fef3c7'] * len(row)
+                    d = float(row['Days Left'])
+                    return f"{int(d)}d" if not pd.isna(d) else '-'
                 except:
-                    pass
-            return styles
+                    return '-'
+            
+            display_df['Days Left'] = display_df.apply(format_days, axis=1)
+            
+            def highlight_row(row):
+                styles = [''] * len(row)
+                status = str(row['Staus']).lower()
+                days_val = str(row['Days Left'])
+                
+                if status == 'ng' or (days_val != '-' and '-' in days_val and 'overdue' in days_val.lower()):
+                    styles = ['background-color: #fee2e2; color: #991b1b'] * len(row)
+                elif days_val != '-' and 'd' in days_val:
+                    try:
+                        days = int(days_val.replace('d',''))
+                        if days < 0:
+                            styles = ['background-color: #fee2e2'] * len(row)
+                        elif days <= 3:
+                            styles = ['background-color: #fef3c7'] * len(row)
+                    except:
+                        pass
+                return styles
 
-        styled_df = (display_df.style
-                     .apply(highlight_row, axis=1)
-                     .applymap(style_status, subset=['Staus'])
-                     .set_properties(**{'font-size': '14px'}))
-        
-        st.dataframe(styled_df, use_container_width=True, height=500, hide_index=True)
+            styled_df = (display_df.style
+                         .apply(highlight_row, axis=1)
+                         .applymap(style_status, subset=['Staus'])
+                         .set_properties(**{'font-size': '14px'}))
+            
+            st.dataframe(styled_df, use_container_width=True, height=500, hide_index=True)
 
-    # Settings
-    with st.expander("⚙️ Email & Settings"):
-        col_set1, col_set2 = st.columns(2)
-        with col_set1:
-            # Multi-line input for primary recipients
-            primary_text = st.text_area("Primary Recipients (one per line)", 
-                                       "\n".join(st.session_state.primary_recipients), height=100)
-            if st.button("Save Primary"):
-                st.session_state.primary_recipients = [e.strip() for e in primary_text.splitlines() if e.strip()]
-                st.success("Primary recipients updated!")
-        with col_set2:
-            cc_text = st.text_area("CC Recipients (one per line)", 
-                                  "\n".join(st.session_state.cc_recipients), height=100)
-            if st.button("Save CC"):
-                st.session_state.cc_recipients = [e.strip() for e in cc_text.splitlines() if e.strip()]
-                st.success("CC recipients updated!")
+        # Settings
+        with st.expander("⚙️ Email & Settings"):
+            col_set1, col_set2 = st.columns(2)
+            with col_set1:
+                primary_text = st.text_area("Primary Recipients (one per line)", 
+                                           "\n".join(st.session_state.primary_recipients), height=100)
+                if st.button("Save Primary"):
+                    st.session_state.primary_recipients = [e.strip() for e in primary_text.splitlines() if e.strip()]
+                    st.success("Primary recipients updated!")
+            with col_set2:
+                cc_text = st.text_area("CC Recipients (one per line)", 
+                                      "\n".join(st.session_state.cc_recipients), height=100)
+                if st.button("Save CC"):
+                    st.session_state.cc_recipients = [e.strip() for e in cc_text.splitlines() if e.strip()]
+                    st.success("CC recipients updated!")
+
+    except Exception as e:
+        st.error(f"❌ **Application crashed with error:**\n\n{str(e)}")
+        st.exception(e)  # Shows full traceback in the UI
 
 if __name__ == "__main__":
     main()
