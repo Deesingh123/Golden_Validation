@@ -11,6 +11,7 @@ import warnings
 import os
 import json
 import io
+import tempfile
 
 warnings.filterwarnings('ignore')
 
@@ -20,23 +21,42 @@ CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSOERBZB4TXUBp_QmForD
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
-# Try to read secrets, but fallback to the hardcoded values you provided.
-# For security, it's better to use st.secrets in production.
+# Try to read secrets, but fallback to hardcoded values
 SENDER_EMAIL = st.secrets.get("SENDER_EMAIL", "chauhandeesingh@gmail.com")
 SENDER_PASSWORD = st.secrets.get("SENDER_PASSWORD", "empxwcwfvmbphvsw")
-PRIMARY_RECIPIENT = st.secrets.get("PRIMARY_RECIPIENT", "emurugesan.padget@dixoninfo.com")
-CC_RECIPIENTS = st.secrets.get("CC_RECIPIENTS", ["chauhandeesingh@gmail.com"])
 
-# If secrets are missing, we still have valid credentials, so email is configured.
-EMAIL_CONFIGURED = all([SENDER_EMAIL, SENDER_PASSWORD, PRIMARY_RECIPIENT])
+# Multiple primary recipients (as a list)
+DEFAULT_PRIMARY = [
+    "emurugesan.padget@dixoninfo.com",
+    "prateek.padget60@dixoninfo.com"
+]
+PRIMARY_RECIPIENTS = st.secrets.get("PRIMARY_RECIPIENTS", DEFAULT_PRIMARY)
+
+# CC recipients (list)
+DEFAULT_CC = [
+    "chauhandeesingh@gmail.com",
+    "ramnaresh.padget@dixoninfo.com",
+    "charlesk.padget@dixoninfo.com",
+    "soban.padget@dixoninfo.com",
+    "gajanand.padget60@dixoninfo.com"
+]
+CC_RECIPIENTS = st.secrets.get("CC_RECIPIENTS", DEFAULT_CC)
+
+# Ensure both are lists
+if isinstance(PRIMARY_RECIPIENTS, str):
+    PRIMARY_RECIPIENTS = [PRIMARY_RECIPIENTS]
+if isinstance(CC_RECIPIENTS, str):
+    CC_RECIPIENTS = [CC_RECIPIENTS]
+
+EMAIL_CONFIGURED = all([SENDER_EMAIL, SENDER_PASSWORD, PRIMARY_RECIPIENTS])
 
 # Auto email settings
 AUTO_EMAIL_HOUR = 9
 AUTO_EMAIL_MINUTE = 0
-AUTO_EMAIL_ENABLED = True  # will work because we have credentials
+AUTO_EMAIL_ENABLED = True
 
-# Persistent state file
-STATE_FILE = "/tmp/golden_sample_email_state.json"
+# Persistent state file – uses system temp directory (works on Windows/Linux/macOS)
+STATE_FILE = os.path.join(tempfile.gettempdir(), "golden_sample_email_state.json")
 # ===================================
 
 st.set_page_config(
@@ -149,15 +169,15 @@ if 'email_sent_today' not in st.session_state:
     st.session_state.email_sent_today = False
 if 'last_email_date' not in st.session_state:
     st.session_state.last_email_date = None
-if 'primary_recipient' not in st.session_state:
-    st.session_state.primary_recipient = PRIMARY_RECIPIENT
+if 'primary_recipients' not in st.session_state:
+    st.session_state.primary_recipients = PRIMARY_RECIPIENTS.copy()
 if 'cc_recipients' not in st.session_state:
     st.session_state.cc_recipients = CC_RECIPIENTS.copy() if isinstance(CC_RECIPIENTS, list) else []
 if 'df' not in st.session_state:
     st.session_state.df = None
 
 # ─────────────────────────────────────────────────────────────
-#  PERSISTENT STATE (unchanged)
+#  PERSISTENT STATE
 # ─────────────────────────────────────────────────────────────
 def _load_state() -> dict:
     try:
@@ -190,7 +210,7 @@ def _mark_email_sent():
     st.session_state.last_email_date = now
 
 # ─────────────────────────────────────────────────────────────
-#  DATA HELPERS (unchanged)
+#  DATA HELPERS
 # ─────────────────────────────────────────────────────────────
 def parse_date_safe(date_str):
     if pd.isna(date_str) or date_str == '' or date_str is None:
@@ -296,9 +316,9 @@ def get_overdue_records(df):
     return df[(df['Days Left'] < 0) & (df['Staus'].str.lower() != 'ok')]
 
 # ─────────────────────────────────────────────────────────────
-#  EMAIL (with CSV attachment)
+#  EMAIL (with CSV attachment, supports multiple primary recipients)
 # ─────────────────────────────────────────────────────────────
-def send_email_alert(df, primary_recipient, cc_recipients):
+def send_email_alert(df, primary_recipients, cc_recipients):
     if not EMAIL_CONFIGURED:
         return False, "Email credentials not configured."
 
@@ -308,7 +328,12 @@ def send_email_alert(df, primary_recipient, cc_recipients):
     if due_records.empty and overdue_records.empty:
         return False, "No records requiring immediate attention"
 
-    cc_list = [e for e in cc_recipients if e and e.strip()]
+    # Clean up lists
+    primary_list = [p.strip() for p in primary_recipients if p and p.strip()]
+    cc_list = [c.strip() for c in cc_recipients if c and c.strip()]
+
+    if not primary_list:
+        return False, "No valid primary recipients"
 
     try:
         # Generate HTML body
@@ -317,7 +342,7 @@ def send_email_alert(df, primary_recipient, cc_recipients):
         # Create message
         msg = MIMEMultipart()
         msg['From'] = SENDER_EMAIL
-        msg['To'] = primary_recipient
+        msg['To'] = ', '.join(primary_list)          # Multiple primary recipients
         if cc_list:
             msg['Cc'] = ', '.join(cc_list)
 
@@ -342,13 +367,14 @@ def send_email_alert(df, primary_recipient, cc_recipients):
             )
             msg.attach(part)
 
-        # Send
+        # Send – include all recipients (primary + CC) in the envelope
+        all_recipients = primary_list + cc_list
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
+            server.send_message(msg, to_addrs=all_recipients)
 
-        return True, f"Alert sent to {primary_recipient} and {len(cc_list)} CC(s) with CSV attachment."
+        return True, f"Alert sent to {len(primary_list)} primary and {len(cc_list)} CC recipients with CSV attachment."
     except Exception as e:
         return False, f"Email failed: {e}"
 
@@ -420,16 +446,16 @@ def check_and_send_auto_email(df):
             _mark_email_sent()
             return False, "No urgent samples"
         
-        success, msg = send_email_alert(df, st.session_state.primary_recipient, st.session_state.cc_recipients)
+        success, msg = send_email_alert(df, st.session_state.primary_recipients, st.session_state.cc_recipients)
         if success:
             _mark_email_sent()
-            return True, f"✅ Auto email sent"
+            return True, "✅ Auto email sent"
         return False, msg
     
     return False, ""
 
 # ─────────────────────────────────────────────────────────────
-#  CHARTS (unchanged)
+#  CHARTS
 # ─────────────────────────────────────────────────────────────
 def create_status_chart(df):
     if df.empty:
@@ -517,7 +543,7 @@ def create_urgency_chart(df):
     )
     return fig
 
-# Styling Functions (unchanged)
+# Styling Functions
 def style_status(val):
     val = str(val).lower().strip()
     if val == 'ok':
@@ -613,7 +639,7 @@ def main():
     with c5:
         if st.button("📧 Send Alert", use_container_width=True, type="primary"):
             with st.spinner("Sending email..."):
-                success, msg = send_email_alert(df, st.session_state.primary_recipient, st.session_state.cc_recipients)
+                success, msg = send_email_alert(df, st.session_state.primary_recipients, st.session_state.cc_recipients)
                 if success:
                     st.success(msg)
                 else:
@@ -691,15 +717,18 @@ def main():
     with st.expander("⚙️ Email & Settings"):
         col_set1, col_set2 = st.columns(2)
         with col_set1:
-            new_primary = st.text_input("Primary Recipient", value=st.session_state.primary_recipient)
-            if new_primary != st.session_state.primary_recipient:
-                st.session_state.primary_recipient = new_primary
+            # Multi-line input for primary recipients
+            primary_text = st.text_area("Primary Recipients (one per line)", 
+                                       "\n".join(st.session_state.primary_recipients), height=100)
+            if st.button("Save Primary"):
+                st.session_state.primary_recipients = [e.strip() for e in primary_text.splitlines() if e.strip()]
+                st.success("Primary recipients updated!")
         with col_set2:
             cc_text = st.text_area("CC Recipients (one per line)", 
                                   "\n".join(st.session_state.cc_recipients), height=100)
-            if st.button("Save Settings"):
+            if st.button("Save CC"):
                 st.session_state.cc_recipients = [e.strip() for e in cc_text.splitlines() if e.strip()]
-                st.success("✅ Settings Saved")
+                st.success("CC recipients updated!")
 
 if __name__ == "__main__":
     main()
